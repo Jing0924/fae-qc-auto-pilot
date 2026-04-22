@@ -21,6 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { CsvChart } from "@/components/csv-chart";
 import { cn } from "@/lib/utils";
 
 type StreamStatus = "idle" | "streaming" | "done" | "error";
@@ -169,8 +170,11 @@ export function ReportGenerator() {
     }
   };
 
+  const isCsv = !!file && /\.csv$/i.test(file.name);
+
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-2">
       <Card className="border-border/80 shadow-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
@@ -423,6 +427,21 @@ export function ReportGenerator() {
           </ScrollArea>
         </CardContent>
       </Card>
+      </div>
+      {isCsv && file ? (
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader>
+            <CardTitle>CSV 視覺化</CardTitle>
+            <CardDescription>依欄位自動產生圖表（純前端）</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CsvChart
+              key={`${file.name}-${file.size}-${file.lastModified}`}
+              file={file}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }
