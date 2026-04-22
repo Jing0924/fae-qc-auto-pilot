@@ -1,0 +1,26 @@
+[2026-04-22T14:22:10.002Z] INFO  station=ATE-03 operator=op_lin shift=N2 fw=2.4.1+beta2 suite=FT_FULL_V33 lot=LOT-B19 wafer=W07 dut_range=SN-9A0001..SN-9A0024
+[2026-04-22T14:22:10.118Z] INFO  calibration last_cal=2026-04-15T02:00:00Z age_days=7.5 drift_note="VREF_CAL delta +38mV vs golden"
+[2026-04-22T14:22:10.342Z] WARN  preflight=SOCKET_CONTINUITY pin=B4,C11,D9 rds_on_mohm=[112,118,134] limit=<80  action=continue_with_override
+[2026-04-22T14:22:10.601Z] INFO  dut=SN-9A0001 insert_retry=0 temp_c=25.1 vcc_mv=1100
+[2026-04-22T14:22:10.902Z] FAIL  dut=SN-9A0001 test=PMIC_PGOOD       meas=0.912V  limit=[1.71,1.86]  err=E_RAIL_UNDERVOLT
+[2026-04-22T14:22:10.903Z] WARN  auto_retry=1/2 action=power_cycle
+[2026-04-22T14:22:12.410Z] FAIL  dut=SN-9A0001 test=PMIC_PGOOD       meas=0.908V  limit=[1.71,1.86]  err=E_RAIL_UNDERVOLT
+[2026-04-22T14:22:12.411Z] WARN  auto_retry=2/2 action=reseat_dut_soft_reset
+[2026-04-22T14:22:14.988Z] FAIL  dut=SN-9A0001 test=PMIC_PGOOD       meas=0.905V  limit=[1.71,1.86]  err=E_RAIL_UNDERVOLT
+[2026-04-22T14:22:14.989Z] INFO  dut=SN-9A0001 abort_remaining_tests=true fail_open=true
+[2026-04-22T14:22:15.210Z] INFO  dut=SN-9A0002 insert_retry=0 temp_c=25.2 vcc_mv=1100
+[2026-04-22T14:22:15.501Z] FAIL  dut=SN-9A0002 test=PMIC_PGOOD       meas=0.899V  limit=[1.71,1.86]  err=E_RAIL_UNDERVOLT
+[2026-04-22T14:22:15.502Z] WARN  auto_retry=1/2 action=power_cycle
+[2026-04-22T14:22:17.044Z] FAIL  dut=SN-9A0002 test=PMIC_PGOOD       meas=0.900V  limit=[1.71,1.86]  err=E_RAIL_UNDERVOLT
+[2026-04-22T14:22:17.045Z] INFO  dut=SN-9A0002 abort_remaining_tests=true fail_open=true
+[2026-04-22T14:22:17.260Z] INFO  dut=SN-9A0003 insert_retry=0 temp_c=25.2 vcc_mv=1100
+[2026-04-22T14:22:17.612Z] FAIL  dut=SN-9A0003 test=PMIC_PGOOD       meas=0.911V  limit=[1.71,1.86]  err=E_RAIL_UNDERVOLT
+[2026-04-22T14:22:17.830Z] FAIL  dut=SN-9A0003 test=CLK_24M_LOCK     meas=no_lock  limit=lock_within_500us err=E_CLK_NO_LOCK
+[2026-04-22T14:22:18.004Z] FAIL  dut=SN-9A0003 test=JTAG_IDCODE      val=0xFFFFFFFF expect=0x0BA00477  err=E_JTAG_BUS_STUCK
+[2026-04-22T14:22:18.005Z] INFO  dut=SN-9A0003 abort_remaining_tests=true fail_open=true
+[2026-04-22T14:22:18.220Z] ALARM tester_self_check=FAIL  probe_card_temp_c=71.4  limit=<65  action=PAUSE_LINE
+[2026-04-22T14:22:18.221Z] ERROR handler=E_HANDLER_STALL  dropped_lots=1  queued=21
+[2026-04-22T14:22:18.410Z] INFO  auto_triage_opened=INC-2026-0422-0031 severity=P1 owner=ate_ops
+[2026-04-22T14:22:18.411Z] SUMMARY result=FAIL passed=0 failed=3 aborted=21 skipped=0 duration_ms=8409 yield_pct=0.00
+[2026-04-22T14:22:18.412Z] HINT  check=DUT_supply_rail  suggest=verify_VCC_CORE_regulator,inspect_probe_card_thermal,recal_VREF  log_bundle=ate03_20260422_1422.tar.gz
+[2026-04-22T14:22:18.413Z] HINT  pattern=100pct_rail_undervolt_across_duts  root_cause_hypothesis=common_supply_or_probe_contact_fault  not_dut_specific=true

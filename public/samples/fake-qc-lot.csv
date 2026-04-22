@@ -1,0 +1,13 @@
+lot_id,stage,temp_c,vcore_mv,iddq_ua,leakage_na,fmax_mhz,yield_pct,notes
+LOT-A01,FT,25,1100,142,8.2,3200,98.4,baseline
+LOT-A01,FT,25,1100,141,8.1,3195,98.6,
+LOT-A01,FT,25,1100,143,8.3,3210,98.3,
+LOT-A02,FT,85,1100,188,11.4,2980,97.1,HTOL corner
+LOT-A02,FT,85,1100,190,11.6,2975,96.9,
+LOT-A02,FT,85,1100,189,11.5,2978,97.0,
+LOT-A03,FT,25,1100,145,8.4,3180,98.1,
+LOT-A03,FT,25,1100,920,8.9,2650,94.2,outlier: vcore drop + iddq low - suspect supply rail or binning error
+LOT-A03,FT,25,1100,144,8.5,3185,98.0,
+LOT-A04,FT,-40,1100,135,7.6,3255,98.8,cold corner
+LOT-A04,FT,-40,1100,136,7.7,3250,98.7,
+LOT-A04,FT,-40,1100,210,9.8,2400,89.5,outlier: high iddq + low fmax at cold - possible defect cluster or mis-calibrated tester

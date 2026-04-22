@@ -1,0 +1,10 @@
+[2026-04-22T08:01:02.112Z] INFO  station=ATE-07 dut=SN-7F3A9C fw=2.4.1+beta2 suite=SMOKE_V33
+[2026-04-22T08:01:02.340Z] PASS  test=PMIC_PGOOD       meas=1.798V  limit=[1.71,1.86]
+[2026-04-22T08:01:02.512Z] PASS  test=CLK_24M_JITTER  meas=42ps_rms limit=<80ps
+[2026-04-22T08:01:02.901Z] PASS  test=JTAG_IDCODE      val=0x0BA00477
+[2026-04-22T08:01:03.204Z] FAIL  test=DDR_PHY_WRLVL  err=E_DDR_WL_TIMEOUT lane=2 rank=0
+[2026-04-22T08:01:03.205Z] WARN  auto_retry=1/2      action=reseat_dut_soft_reset
+[2026-04-22T08:01:05.887Z] FAIL  test=DDR_PHY_WRLVL  err=E_DDR_WL_TIMEOUT lane=2 rank=0
+[2026-04-22T08:01:05.888Z] INFO  abort_remaining_tests=true  fail_open=true
+[2026-04-22T08:01:05.890Z] SUMMARY result=FAIL failed=1 passed=3 skipped=12 duration_ms=3788
+[2026-04-22T08:01:05.891Z] HINT  check=DUT_socket_contact  suggest=inspect_lane2_DQS_pair  log_bundle=ate07_20260422_0801.tar.gz

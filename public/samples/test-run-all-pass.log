@@ -1,0 +1,26 @@
+[2026-04-22T02:30:00.011Z] INFO  station=ATE-11 operator=op_chen shift=N1 fw=2.4.1+beta2 suite=FT_GOLDEN_V33 lot=LOT-G01 wafer=GOLDEN_REF dut_range=SN-GLD001..SN-GLD008
+[2026-04-22T02:30:00.102Z] INFO  calibration last_cal=2026-04-22T01:00:00Z age_hours=1.5 drift_note=within_spec  golden_sample=true
+[2026-04-22T02:30:00.244Z] INFO  preflight=SOCKET_CONTINUITY pass=160/160 rds_on_mohm_max=54 limit=<80
+[2026-04-22T02:30:00.401Z] INFO  dut=SN-GLD001 insert_retry=0 temp_c=25.0 vcc_mv=1100
+[2026-04-22T02:30:00.612Z] PASS  dut=SN-GLD001 test=PMIC_PGOOD       meas=1.800V  limit=[1.71,1.86]  center_margin_pct=0.0
+[2026-04-22T02:30:00.790Z] PASS  dut=SN-GLD001 test=CLK_24M_JITTER   meas=39ps_rms limit=<80ps
+[2026-04-22T02:30:01.006Z] PASS  dut=SN-GLD001 test=JTAG_IDCODE      val=0x0BA00477
+[2026-04-22T02:30:01.389Z] PASS  dut=SN-GLD001 test=DDR_PHY_WRLVL    lane_margin_ps=[140,138,142,139,141,140,143,138]
+[2026-04-22T02:30:01.702Z] PASS  dut=SN-GLD001 test=IDDQ_LEAKAGE     meas=7.6uA  limit=<25uA
+[2026-04-22T02:30:02.004Z] PASS  dut=SN-GLD001 test=FMAX_SHMOO       meas=3220MHz limit=>=3000
+[2026-04-22T02:30:02.188Z] PASS  dut=SN-GLD001 result=PASS duration_ms=1787
+[2026-04-22T02:30:02.320Z] INFO  dut=SN-GLD002 insert_retry=0 temp_c=25.0 vcc_mv=1100
+[2026-04-22T02:30:02.511Z] PASS  dut=SN-GLD002 test=PMIC_PGOOD       meas=1.799V  limit=[1.71,1.86]
+[2026-04-22T02:30:02.690Z] PASS  dut=SN-GLD002 test=CLK_24M_JITTER   meas=40ps_rms limit=<80ps
+[2026-04-22T02:30:02.902Z] PASS  dut=SN-GLD002 test=JTAG_IDCODE      val=0x0BA00477
+[2026-04-22T02:30:03.288Z] PASS  dut=SN-GLD002 test=DDR_PHY_WRLVL    lane_margin_ps=[141,139,140,138,142,139,141,140]
+[2026-04-22T02:30:03.604Z] PASS  dut=SN-GLD002 test=IDDQ_LEAKAGE     meas=7.8uA  limit=<25uA
+[2026-04-22T02:30:03.912Z] PASS  dut=SN-GLD002 test=FMAX_SHMOO       meas=3215MHz limit=>=3000
+[2026-04-22T02:30:04.090Z] PASS  dut=SN-GLD002 result=PASS duration_ms=1770
+[2026-04-22T02:30:04.220Z] INFO  batch_progress completed=8/8 elapsed_ms=14209 retries=0 warnings=0
+[2026-04-22T02:30:04.221Z] STATS PMIC_PGOOD    n=8  mean=1.800V  stdev=0.002V  cp=2.41 cpk=2.38
+[2026-04-22T02:30:04.222Z] STATS CLK_JITTER    n=8  mean=40.1ps  stdev=0.9ps   cp=2.77 cpk=2.68
+[2026-04-22T02:30:04.223Z] STATS IDDQ_LEAKAGE  n=8  mean=7.74uA  stdev=0.12uA  cp=3.04 cpk=2.91
+[2026-04-22T02:30:04.224Z] STATS FMAX_SHMOO    n=8  mean=3216MHz stdev=4.2MHz  cp=2.95 cpk=2.82
+[2026-04-22T02:30:04.225Z] SUMMARY result=PASS passed=8 failed=0 skipped=0 retry_ok=0 duration_ms=14209 yield_pct=100.00
+[2026-04-22T02:30:04.226Z] HINT  status=clean_run  suggest=promote_to_production_baseline  log_bundle=ate11_20260422_0230.tar.gz
