@@ -24,7 +24,7 @@ export type CsvParseForAnalysisError = {
 };
 
 export type CsvParseForAnalysisData = {
-  /** 已 cap 的列，供統計與門檻檢查 */
+  /** 已 cap 的列，供統計與分析 */
   rows: CsvStringRow[];
   headers: string[];
   rowTruncated: boolean;
