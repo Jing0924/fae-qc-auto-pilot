@@ -128,3 +128,11 @@
     @apply font-sans;
   }
 }
+
+@layer utility {
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+  }
+}

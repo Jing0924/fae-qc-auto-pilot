@@ -115,8 +115,11 @@ export function CsvChart({ file }: { file: File }) {
 
   useEffect(() => {
     let cancelled = false;
-    setPhase("parsing");
-    setOutcome(null);
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setPhase("parsing");
+      setOutcome(null);
+    });
 
     Papa.parse<Row>(file, {
       header: true,

@@ -1,19 +1,20 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Archive,
+  ChevronDown,
   ChevronRight,
-  Download,
   FileText,
   FileUp,
   Loader2,
+  Printer,
   Sparkles,
   TriangleAlert,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -21,7 +22,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { CsvChart } from "@/components/csv-chart";
+import { useFaeCsvPrep } from "@/hooks/use-fae-csv-prep";
+import { DEFAULT_THRESHOLDS_JSON } from "@/lib/fae/demo-spec";
 import { buildReportDownloadFilename } from "@/lib/fae/report-filename";
 import {
   buildZipDownloadBasename,
@@ -38,6 +51,15 @@ type ReportItem = {
   status: ItemStatus;
   markdown: string;
   error?: string;
+};
+
+type SpecMode = "demo" | "none" | "custom";
+
+export type ReportStreamContext = {
+  notes: string;
+  specMode: SpecMode;
+  customSpec: string;
+  thresholdsJson: string;
 };
 
 function formatFileSize(bytes: number): string {
@@ -104,9 +126,14 @@ async function streamReportForFile(
   file: File,
   signal: AbortSignal,
   onDelta: (text: string) => void,
+  ctx: ReportStreamContext,
 ): Promise<void> {
   const body = new FormData();
   body.set("file", file);
+  body.set("notes", ctx.notes);
+  body.set("specMode", ctx.specMode);
+  body.set("customSpec", ctx.customSpec);
+  body.set("thresholdsJson", ctx.thresholdsJson);
   const res = await fetch("/api/report", {
     method: "POST",
     body,
@@ -134,13 +161,40 @@ async function streamReportForFile(
   }
 }
 
+const PREVIEW_SKELETON_MAX = 72;
+
 export function ReportGenerator() {
   const [items, setItems] = useState<ReportItem[]>([]);
   const [openItemId, setOpenItemId] = useState<string | null>(null);
+  const [csvViewId, setCsvViewId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [specMode, setSpecMode] = useState<SpecMode>("demo");
+  const [customSpec, setCustomSpec] = useState("");
+  const [notes, setNotes] = useState("");
+  const [thresholdsJson, setThresholdsJson] = useState(DEFAULT_THRESHOLDS_JSON);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const csvItems = useMemo(
+    () => items.filter((i) => /\.csv$/i.test(i.file.name)),
+    [items],
+  );
+
+  const csvTabValue = useMemo(() => {
+    if (csvItems.length === 0) return null;
+    if (csvViewId && csvItems.some((c) => c.id === csvViewId)) {
+      return csvViewId;
+    }
+    return csvItems[0]!.id;
+  }, [csvItems, csvViewId]);
+
+  const activeCsvFile = useMemo(() => {
+    if (!csvTabValue) return null;
+    return csvItems.find((c) => c.id === csvTabValue)?.file ?? null;
+  }, [csvItems, csvTabValue]);
+
+  const csvPrep = useFaeCsvPrep(activeCsvFile, thresholdsJson);
 
   const resetStream = useCallback(() => {
     abortRef.current?.abort();
@@ -150,15 +204,15 @@ export function ReportGenerator() {
   const addFiles = useCallback((fileList: FileList | File[]) => {
     const list = Array.from(fileList).filter((f) => f.size > 0);
     if (list.length === 0) return;
-    setItems((prev) => [
-      ...prev,
-      ...list.map((file) => ({
-        id: crypto.randomUUID(),
-        file,
-        status: "idle" as const,
-        markdown: "",
-      })),
-    ]);
+    const toAdd: ReportItem[] = list.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      status: "idle" as const,
+      markdown: "",
+    }));
+    const firstCsv = toAdd.find((x) => /\.csv$/i.test(x.file.name));
+    if (firstCsv) setCsvViewId(firstCsv.id);
+    setItems((prev) => [...prev, ...toAdd]);
     setGlobalError(null);
   }, []);
 
@@ -171,6 +225,7 @@ export function ReportGenerator() {
     resetStream();
     setItems([]);
     setOpenItemId(null);
+    setCsvViewId(null);
     setGlobalError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [resetStream]);
@@ -180,8 +235,17 @@ export function ReportGenerator() {
   );
 
   const toggleItem = useCallback((id: string) => {
-    setOpenItemId((o) => (o === id ? null : id));
-  }, []);
+    setOpenItemId((o) => {
+      const next = o === id ? null : id;
+      if (next) {
+        const it = items.find((x) => x.id === next);
+        if (it && /\.csv$/i.test(it.file.name)) {
+          setCsvViewId(next);
+        }
+      }
+      return next;
+    });
+  }, [items]);
 
   const downloadOne = useCallback((item: ReportItem) => {
     if (item.markdown.trim().length === 0) return;
@@ -213,14 +277,28 @@ export function ReportGenerator() {
     );
   }, [items]);
 
+  const printReport = useCallback(() => {
+    window.print();
+  }, []);
+
   const generateReports = useCallback(async () => {
     if (items.length === 0) {
       setGlobalError("請先加入至少一個檔案。");
       return;
     }
     if (isBatchBusy) return;
+    if (specMode === "custom" && customSpec.trim().length === 0) {
+      setGlobalError("已選擇「自訂規格」時，請在文字框內貼上規格內容，或改選 Demo/不併入。");
+      return;
+    }
 
     const snapshot = items;
+    const ctx: ReportStreamContext = {
+      notes: notes.trim(),
+      specMode,
+      customSpec: customSpec.trim(),
+      thresholdsJson: thresholdsJson.trim() || DEFAULT_THRESHOLDS_JSON,
+    };
     setGlobalError(null);
     resetStream();
     const controller = new AbortController();
@@ -253,7 +331,7 @@ export function ReportGenerator() {
             setItems((prev) =>
               prev.map((x) => (x.id === id ? { ...x, markdown: text } : x)),
             );
-          });
+          }, ctx);
           setItems((prev) =>
             prev.map((x) => (x.id === id ? { ...x, status: "done" } : x)),
           );
@@ -284,7 +362,7 @@ export function ReportGenerator() {
     } finally {
       abortRef.current = null;
     }
-  }, [isBatchBusy, items, resetStream]);
+  }, [customSpec, isBatchBusy, items, notes, resetStream, specMode, thresholdsJson]);
 
   const cancelBatch = useCallback(() => {
     resetStream();
@@ -294,160 +372,274 @@ export function ReportGenerator() {
     (i) => i.status === "done" && i.markdown.trim().length > 0,
   );
 
-  const csvItems = items.filter((i) => /\.csv$/i.test(i.file.name));
+  const printItem = useMemo(() => {
+    if (openItemId) {
+      const o = items.find((x) => x.id === openItemId);
+      if (o && o.markdown.trim().length > 0) return o;
+    }
+    return items.find((x) => x.status === "done" && x.markdown.trim().length > 0) ?? null;
+  }, [items, openItemId]);
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="border-border/80 shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <FileUp className="size-5 opacity-80" />
-              資料匯入
-            </CardTitle>
-            <CardDescription>
-              可選多份 Log 或 CSV；每份檔案會分別產生一份報告（依序串流，長檔同樣可能截斷後送模型）。
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div
-              className={cn(
-                "flex min-h-[160px] w-full min-w-0 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-4 py-6 text-center transition-colors",
-                isDragging
-                  ? "border-primary bg-accent/40"
-                  : items.length
-                    ? "border-primary/40 bg-muted/30 hover:border-primary/50"
-                    : "border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/30",
-              )}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDragging(false);
-                if (e.dataTransfer.files?.length) {
-                  addFiles(e.dataTransfer.files);
-                }
-              }}
-              onClick={() => fileInputRef.current?.click()}
-              role="presentation"
-            >
-              <input
-                id="fae-file-input"
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                multiple
-                accept=".log,.txt,.csv,text/plain,text/csv"
-                onChange={(e) => {
-                  if (e.target.files?.length) addFiles(e.target.files);
-                }}
-              />
-              <Sparkles className="mb-2 size-8 text-muted-foreground" />
-              <p className="text-sm font-medium">拖放檔案至此，或點擊多選</p>
-              <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-                可重複加入；下方列表可單筆或一次清除
-              </p>
-            </div>
-
-            {items.length > 0 ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    已選 {items.length} 個檔案
-                  </p>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    disabled={isBatchBusy}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      clearAll();
-                    }}
-                  >
-                    全部清除
-                  </Button>
-                </div>
-                <div className="max-h-40 min-h-0 overflow-y-auto overflow-x-hidden rounded-lg border border-border/80 bg-muted/15 pr-1">
-                  <ul className="divide-y divide-border/60 p-1">
-                    {items.map((item) => (
-                      <li
-                        key={item.id}
-                        className="flex min-w-0 items-center gap-2 py-1.5 pr-1 pl-2"
-                      >
-                        <FileText
-                          className="size-3.5 shrink-0 text-muted-foreground"
-                          aria-hidden
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p
-                            className="truncate text-xs font-medium text-foreground"
-                            title={item.file.name}
-                          >
-                            {item.file.name}
-                          </p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {formatFileSize(item.file.size)}
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-7 shrink-0"
-                          disabled={isBatchBusy}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeItem(item.id);
-                          }}
-                          aria-label={`移除 ${item.file.name}`}
-                        >
-                          <X className="size-3.5" />
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                onClick={generateReports}
-                disabled={items.length === 0 || isBatchBusy}
-                className="gap-2"
-              >
-                {isBatchBusy ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Sparkles className="size-4" />
+      <div className="grid gap-6 lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <div className="no-print space-y-6">
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <FileUp className="size-5 opacity-80" />
+                資料匯入
+              </CardTitle>
+              <CardDescription>
+                可選多份 Log 或 CSV；每份檔案會分別產生一份報告；格式與大小仍受 Demo 限制。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div
+                className={cn(
+                  "flex min-h-[160px] w-full min-w-0 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-4 py-6 text-center transition-colors",
+                  isDragging
+                    ? "border-primary bg-accent/40"
+                    : items.length
+                      ? "border-primary/40 bg-muted/30 hover:border-primary/50"
+                      : "border-muted-foreground/25 hover:border-muted-foreground/50 hover:bg-muted/30",
                 )}
-                產生報告（Gemini 串流）
-              </Button>
-              {isBatchBusy ? (
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  if (e.dataTransfer.files?.length) {
+                    addFiles(e.dataTransfer.files);
+                  }
+                }}
+                onClick={() => fileInputRef.current?.click()}
+                role="presentation"
+              >
+                <input
+                  id="fae-file-input"
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  multiple
+                  accept=".log,.txt,.csv,text/plain,text/csv"
+                  onChange={(e) => {
+                    if (e.target.files?.length) addFiles(e.target.files);
+                  }}
+                />
+                <Sparkles className="mb-2 size-8 text-muted-foreground" />
+                <p className="text-sm font-medium">拖放檔案至此，或點擊多選</p>
+                <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+                  可重複加入；下方列表可單筆或一次清除
+                </p>
+              </div>
+
+              {items.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      已選 {items.length} 個檔案
+                    </p>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={isBatchBusy}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        clearAll();
+                      }}
+                    >
+                      全部清除
+                    </Button>
+                  </div>
+                  <div className="max-h-40 min-h-0 overflow-y-auto overflow-x-hidden rounded-lg border border-border/80 bg-muted/15 pr-1">
+                    <ul className="divide-y divide-border/60 p-1">
+                      {items.map((item) => (
+                        <li
+                          key={item.id}
+                          className="flex min-w-0 items-center gap-2 py-1.5 pr-1 pl-2"
+                        >
+                          <FileText
+                            className="size-3.5 shrink-0 text-muted-foreground"
+                            aria-hidden
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p
+                              className="truncate text-xs font-medium text-foreground"
+                              title={item.file.name}
+                            >
+                              {item.file.name}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {formatFileSize(item.file.size)}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="size-7 shrink-0"
+                            disabled={isBatchBusy}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeItem(item.id);
+                            }}
+                            aria-label={`移除 ${item.file.name}`}
+                          >
+                            <X className="size-3.5" />
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  variant="outline"
-                  onClick={cancelBatch}
+                  onClick={generateReports}
+                  disabled={items.length === 0 || isBatchBusy}
+                  className="gap-2"
                 >
-                  取消
+                  {isBatchBusy ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="size-4" />
+                  )}
+                  產生報告（Gemini 串流）
                 </Button>
-              ) : null}
-            </div>
+                {isBatchBusy ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={cancelBatch}
+                  >
+                    取消
+                  </Button>
+                ) : null}
+              </div>
 
-            {globalError ? (
-              <p className="flex items-start gap-2 text-sm text-destructive">
-                <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-                {globalError}
-              </p>
-            ) : null}
-          </CardContent>
-        </Card>
+              {globalError ? (
+                <p className="flex items-start gap-2 text-sm text-destructive">
+                  <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+                  {globalError}
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/80 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-lg">分析參數與規格</CardTitle>
+              <CardDescription>
+                併入生成提示：Demo 規格、門檻 JSON、備註。CSV
+                時左欄顯示與 API 相同之預處理摘要（目前圖表對應檔如下）。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="fae-spec-mode">產品規格來源</Label>
+                <select
+                  id="fae-spec-mode"
+                  className={cn(
+                    "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none",
+                    "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  )}
+                  value={specMode}
+                  onChange={(e) => setSpecMode(e.target.value as SpecMode)}
+                  disabled={isBatchBusy}
+                >
+                  <option value="demo">示範規格（demo-product-spec-zh.md）</option>
+                  <option value="none">不併入規格檔</option>
+                  <option value="custom">自訂（下方貼上全文）</option>
+                </select>
+              </div>
+
+              {specMode === "custom" ? (
+                <div className="space-y-2">
+                  <Label htmlFor="fae-custom-spec">自訂規格內文</Label>
+                  <Textarea
+                    id="fae-custom-spec"
+                    className="min-h-[100px] font-mono text-xs"
+                    placeholder="貼上 USL/LSL、欄位名、測程關鍵字…"
+                    value={customSpec}
+                    onChange={(e) => setCustomSpec(e.target.value)}
+                    disabled={isBatchBusy}
+                  />
+                </div>
+              ) : null}
+
+              <div className="space-y-2">
+                <Label htmlFor="fae-thresholds">門檻（JSON，欄位名須同 CSV）</Label>
+                <Textarea
+                  id="fae-thresholds"
+                  className="min-h-[88px] font-mono text-xs"
+                  value={thresholdsJson}
+                  onChange={(e) => setThresholdsJson(e.target.value)}
+                  disabled={isBatchBusy}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  變更後會一併影響 API 的門檻掃描敘述與下欄即時預覽（CSV）。
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="fae-notes">額外備註（併入提示）</Label>
+                <Textarea
+                  id="fae-notes"
+                  className="min-h-[64px] text-sm"
+                  placeholder="例如：客戶代號、測條代碼、需特別關注的欄位…"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  disabled={isBatchBusy}
+                />
+              </div>
+
+              <div className="rounded-lg border border-border/80 bg-muted/20 p-3">
+                <p className="text-xs font-medium text-foreground">
+                  數值預處理（選取中 CSV：{activeCsvFile?.name ?? "—"}）
+                </p>
+                {csvPrep.status === "loading" ? (
+                  <div className="mt-2 space-y-2">
+                    <Skeleton className="h-3 w-4/5" />
+                    <Skeleton className="h-3 w-full" />
+                    <Skeleton className="h-3 w-2/3" />
+                  </div>
+                ) : null}
+                {csvPrep.status === "unavailable" && csvPrep.hint ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {csvPrep.hint}
+                  </p>
+                ) : null}
+                {csvPrep.status === "ready" && csvPrep.summaryText ? (
+                  <div className="mt-2 max-h-48 overflow-y-auto pr-1">
+                    <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground">
+                      {csvPrep.summaryText.slice(0, 4000)}
+                      {csvPrep.summaryText.length > 4000 ? "…" : ""}
+                    </pre>
+                    {csvPrep.thresholdHints ? (
+                      <div className="mt-2 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+                        <p className="mb-1 font-medium text-foreground">門檻掃描</p>
+                        <pre className="whitespace-pre-wrap break-words font-mono">
+                          {csvPrep.thresholdHints}
+                        </pre>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {csvPrep.error ? (
+                  <p className="mt-1 text-xs text-destructive">{csvPrep.error}</p>
+                ) : null}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         <Card className="border-border/80 shadow-sm">
           <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
@@ -455,21 +647,39 @@ export function ReportGenerator() {
               <CardTitle className="text-lg">報告預覽</CardTitle>
               <CardDescription>依檔收合；串流中會自動展開目前項目</CardDescription>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="no-print flex flex-wrap items-center gap-2">
               {aggregateBadge(items)}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                disabled={!hasZipEligible}
-                onClick={() => void downloadAllZip()}
-                title="下載多份 .md 為一個壓縮檔"
-                aria-label="下載全部報告為 ZIP"
-              >
-                <Archive className="size-4" />
-                下載全部（.zip）
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  type="button"
+                  className={cn(
+                    buttonVariants({ variant: "outline", size: "sm" }),
+                    "gap-1",
+                  )}
+                  disabled={!hasZipEligible && !printItem}
+                >
+                  匯出
+                  <ChevronDown className="size-3.5 opacity-60" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem
+                    className="gap-2"
+                    disabled={!hasZipEligible}
+                    onClick={() => void downloadAllZip()}
+                  >
+                    <Archive className="size-4" />
+                    全部報告 .zip
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="gap-2"
+                    disabled={!printItem}
+                    onClick={() => printReport()}
+                  >
+                    <Printer className="size-4" />
+                    列印／存 PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </CardHeader>
           <CardContent className="p-0">
@@ -487,12 +697,15 @@ export function ReportGenerator() {
                     item.status === "done" && item.markdown.trim().length > 0;
                   const hasPreview =
                     item.markdown.length > 0 || item.status === "streaming";
+                  const showSkeleton =
+                    item.status === "streaming" &&
+                    item.markdown.length < PREVIEW_SKELETON_MAX;
                   return (
                     <li
                       key={item.id}
                       className="overflow-hidden rounded-lg border border-border/80 bg-card"
                     >
-                      <div className="flex min-w-0 items-center gap-2 border-b border-border/60 bg-muted/20 px-3 py-2">
+                      <div className="no-print flex min-w-0 items-center gap-2 border-b border-border/60 bg-muted/20 px-3 py-2">
                         <button
                           type="button"
                           onClick={() => toggleItem(item.id)}
@@ -521,20 +734,27 @@ export function ReportGenerator() {
                           disabled={!canDownload}
                           onClick={() => downloadOne(item)}
                         >
-                          <Download className="size-3.5" />
                           .md
                         </Button>
                       </div>
                       {isOpen ? (
-                        <div>
+                        <div className="fae-markdown-panel">
                           {item.error ? (
-                            <p className="flex items-start gap-2 px-3 py-2 text-sm text-destructive">
+                            <p className="no-print flex items-start gap-2 px-3 py-2 text-sm text-destructive">
                               <TriangleAlert className="mt-0.5 size-4 shrink-0" />
                               {item.error}
                             </p>
                           ) : null}
-                          <div className="max-h-80 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
+                          <div className="max-h-80 min-h-0 overflow-y-auto overflow-x-hidden pr-1 print:max-h-none">
                             <div className="p-3 text-sm leading-relaxed">
+                              {showSkeleton ? (
+                                <div className="no-print mb-3 space-y-2">
+                                  <Skeleton className="h-3 w-2/3" />
+                                  <Skeleton className="h-3 w-full" />
+                                  <Skeleton className="h-3 w-5/6" />
+                                  <Skeleton className="h-3 w-1/2" />
+                                </div>
+                              ) : null}
                               {!hasPreview && item.status !== "error" ? (
                                 <p className="text-muted-foreground">尚無內容</p>
                               ) : hasPreview ? (
@@ -554,26 +774,59 @@ export function ReportGenerator() {
       </div>
 
       {csvItems.length > 0 ? (
-        <div className="space-y-4">
-          {csvItems.map((item) => (
-            <Card
-              key={`${item.id}-csv`}
-              className="border-border/80 shadow-sm"
+        <div className="no-print space-y-2">
+          <h3 className="text-sm font-medium text-foreground">CSV 視覺化</h3>
+          <Tabs
+            value={csvTabValue ?? csvItems[0]!.id}
+            onValueChange={setCsvViewId}
+            className="w-full"
+          >
+            <TabsList
+              className="no-scrollbar h-auto w-full min-w-0 max-w-full flex-wrap justify-start gap-1 p-1"
             >
-              <CardHeader>
-                <CardTitle>CSV 視覺化</CardTitle>
-                <CardDescription className="truncate" title={item.file.name}>
-                  {item.file.name}（純前端）
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <CsvChart
-                  key={`${item.file.name}-${item.file.size}-${item.file.lastModified}`}
-                  file={item.file}
-                />
-              </CardContent>
-            </Card>
-          ))}
+              {csvItems.map((c) => (
+                <TabsTrigger key={c.id} value={c.id} className="max-w-[10rem] shrink truncate text-xs" title={c.file.name}>
+                  {c.file.name}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            {csvItems.map((c) => (
+              <TabsContent
+                key={c.id}
+                value={c.id}
+                className="mt-3 outline-none"
+              >
+                <Card className="border-border/80 shadow-sm">
+                  <CardHeader className="py-3">
+                    <CardTitle className="text-base">圖表</CardTitle>
+                    <CardDescription className="truncate" title={c.file.name}>
+                      {c.file.name}（純前端；與上方分頁同一檔）
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <CsvChart
+                      key={`${c.id}-${c.file.name}-${c.file.size}-${c.file.lastModified}`}
+                      file={c.file}
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            ))}
+          </Tabs>
+        </div>
+      ) : null}
+
+      {printItem ? (
+        <div
+          className="hidden print:block print:break-inside-avoid"
+          aria-hidden
+        >
+          <h2 className="mb-3 text-sm font-semibold text-foreground">
+            {printItem.file.name}
+          </h2>
+          <div className="prose-p:leading-relaxed text-sm text-foreground">
+            <FaeMarkdown>{printItem.markdown}</FaeMarkdown>
+          </div>
         </div>
       ) : null}
     </div>

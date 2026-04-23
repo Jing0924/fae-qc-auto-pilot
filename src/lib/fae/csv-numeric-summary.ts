@@ -1,13 +1,5 @@
-import Papa from "papaparse";
-import {
-  MAX_CSV_ROWS,
-  type CsvStringRow,
-  cellIsEmpty,
-  filterNonEmptyRows,
-  getHeaders,
-  isNumericColumn,
-  isParseAborted,
-} from "@/lib/csv/numeric-cols";
+import { parseCsvForAnalysis } from "@/lib/fae/parse-csv-for-analysis";
+import { MAX_CSV_ROWS, cellIsEmpty } from "@/lib/csv/numeric-cols";
 
 const OUTLIERS_PER_COL = 10;
 const OUTLIERS_GRAND = 30;
@@ -59,42 +51,11 @@ function fmtNum(x: number): string {
  * 若無法解析或無任何數值欄，回傳說明字串，供併入 LLM 提示，勿回传 null 以免漏敘述。
  */
 export function computeCsvNumericSummary(csvText: string): string {
-  if (!csvText.trim()) {
-    return "（系統：無內文可分析數值。）";
+  const pre = parseCsvForAnalysis(csvText);
+  if (!pre.ok) {
+    return pre.error.message;
   }
-
-  const parsed = Papa.parse<CsvStringRow>(csvText, {
-    header: true,
-    skipEmptyLines: true,
-    dynamicTyping: false,
-  });
-
-  if (isParseAborted(parsed)) {
-    return "（系統：CSV 解析中止，無法產生數值統計。）";
-  }
-
-  const rawRows = filterNonEmptyRows(parsed.data);
-  if (rawRows.length === 0) {
-    const errMsg = parsed.errors.map((e) => e.message).join("；");
-    if (errMsg) {
-      return `（系統：CSV 解析失敗，無法產生數值統計。${errMsg}）`;
-    }
-    return "（系統：檔內沒有非空列，無法產生數值統計。）";
-  }
-
-  const totalRowsBeforeCap = rawRows.length;
-  const rows = rawRows.slice(0, MAX_CSV_ROWS);
-  const rowTruncated = totalRowsBeforeCap > MAX_CSV_ROWS;
-
-  const headers = getHeaders(parsed, rawRows);
-  if (headers.length === 0) {
-    return "（系統：沒有欄位標題，無法產生數值統計。）";
-  }
-
-  const numericFields = headers.filter((h) => isNumericColumn(h, rows));
-  if (numericFields.length === 0) {
-    return "（系統：沒有符合條件之數值欄［每欄非空格皆需為可解析之數］，無法產生數值統計。）";
-  }
+  const { rows, rowTruncated, totalRowsBeforeCap, numericFields } = pre.data;
 
   const lines: string[] = [];
   if (rowTruncated) {
