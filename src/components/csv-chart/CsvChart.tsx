@@ -13,40 +13,23 @@ import {
   YAxis,
 } from "recharts";
 import { CardTitle } from "@/components/ui/card";
+import {
+  MAX_CSV_ROWS,
+  cellIsEmpty,
+  filterNonEmptyRows,
+  getHeaders,
+  isNumericColumn,
+  isParseAborted,
+  pickXKey,
+} from "@/lib/csv/numeric-cols";
 import { cn } from "@/lib/utils";
 
-const MAX_ROWS = 2000;
 const MAX_NUMERIC_COLS = 8;
 
 type Row = Record<string, string>;
 type ChartRow = Record<string, string | number | null>;
 
 type Phase = "parsing" | "ready" | "empty" | "error";
-
-function cellIsEmpty(v: unknown): boolean {
-  if (v == null) return true;
-  const s = typeof v === "string" ? v : String(v);
-  return s.trim() === "";
-}
-
-function isNumericColumn(field: string, rows: Row[]): boolean {
-  let sawNonEmpty = false;
-  for (const row of rows) {
-    const raw = row[field];
-    if (cellIsEmpty(raw)) continue;
-    sawNonEmpty = true;
-    const n = Number(String(raw).trim());
-    if (Number.isNaN(n) || !Number.isFinite(n)) return false;
-  }
-  return sawNonEmpty;
-}
-
-function pickXKey(headers: string[], rows: Row[]): string {
-  for (const h of headers) {
-    if (!isNumericColumn(h, rows)) return h;
-  }
-  return "__idx";
-}
 
 type ParseOutcome =
   | {
@@ -62,13 +45,11 @@ type ParseOutcome =
   | { phase: "error"; message: string };
 
 function buildOutcome(results: Papa.ParseResult<Row>): ParseOutcome {
-  if (results.meta.aborted) {
+  if (isParseAborted(results)) {
     return { phase: "error", message: "CSV 解析已中止" };
   }
 
-  const rawRows = (results.data as Row[]).filter((row) =>
-    Object.values(row).some((v) => !cellIsEmpty(v)),
-  );
+  const rawRows = filterNonEmptyRows(results.data as Row[]);
 
   if (rawRows.length === 0) {
     if (results.errors.length > 0) {
@@ -81,19 +62,17 @@ function buildOutcome(results: Papa.ParseResult<Row>): ParseOutcome {
     return { phase: "empty" };
   }
 
-  const headers =
-    results.meta.fields?.filter(Boolean) ??
-    (rawRows[0] ? Object.keys(rawRows[0]) : []);
+  const headers = getHeaders(results, rawRows);
 
   if (headers.length === 0) {
     return { phase: "empty" };
   }
 
   const totalRowsBeforeCap = rawRows.length;
-  const rows = rawRows.slice(0, MAX_ROWS);
-  const rowTruncated = totalRowsBeforeCap > MAX_ROWS;
+  const rows = rawRows.slice(0, MAX_CSV_ROWS);
+  const rowTruncated = totalRowsBeforeCap > MAX_CSV_ROWS;
 
-  const xKey = pickXKey(headers, rows);
+  const xKey = pickXKey(headers, rows, isNumericColumn);
   const numericAll = headers.filter(
     (h) => h !== xKey && isNumericColumn(h, rows),
   );
@@ -214,7 +193,7 @@ export function CsvChart({ file }: { file: File }) {
     <div className="space-y-4">
       {ready.rowTruncated ? (
         <p className="text-xs text-muted-foreground">
-          列數超過 {MAX_ROWS.toLocaleString()}，已截斷為前 {MAX_ROWS.toLocaleString()}{" "}
+          列數超過 {MAX_CSV_ROWS.toLocaleString()}，已截斷為前 {MAX_CSV_ROWS.toLocaleString()}{" "}
           列以避免瀏覽器卡頓（原始 {ready.totalRowsBeforeCap.toLocaleString()}{" "}
           列）。
         </p>

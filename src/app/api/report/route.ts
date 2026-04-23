@@ -1,6 +1,7 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { streamText } from "ai";
 import { inferDataKind } from "@/lib/fae/build-mock-report";
+import { computeCsvNumericSummary } from "@/lib/fae/csv-numeric-summary";
 
 export const runtime = "nodejs";
 
@@ -11,12 +12,12 @@ const MAX_TEXT_CHARS = 32_000;
 /**
  * 目標報告字元上限（含標點與換行）。本機／快速測試用；上線前可刪除或改為環境變數。
  */
-const DEMO_MAX_REPORT_CHARS = 1000;
+const DEMO_MAX_REPORT_CHARS = 5000;
 /**
  * 模型輸出 token 上限（硬限制）。此為 token 數，與中文字元數非固定比例，不保證剛好等於
  * {@link DEMO_MAX_REPORT_CHARS} 字；若日後要嚴格截斷字元數，需在串流層額外實作。
  */
-const DEMO_MAX_REPORT_OUTPUT_TOKENS = 4096;
+const DEMO_MAX_REPORT_OUTPUT_TOKENS = 8196;
 
 const FAE_SYSTEM_PROMPT = [
   "你是資深 FAE（現場應用工程師）兼品管分析顧問。",
@@ -31,6 +32,7 @@ const FAE_SYSTEM_PROMPT = [
   "- 僅根據本次提供的檔案內容推論；資訊不足處明確標示不確定性，避免斷言。",
   "- 區分「觀察到的現象」與「假設／可能根因」；假設需列出，並建議可驗證的下一步（量測、交叉比對、實驗設計）。",
   "- 若偵測到可能 outlier 或異常趨勢，說明依據（欄位、數值、與周遭資料對比），並標註信心程度。",
+  "- 當使用者的提示內含「## 系統預先計算之數值摘要」等系統產生之統計時，報告中引用的 n、各欄 min／max、平均、標準差、中位數、IQR 離群之列號與數值，必須與該摘要完全一致，不得虛構或竄改；若摘要以括號註明「無法產生數值統計」或等效說明，則僅能依內文摘錄推論，並可簡要說明缺統計之原因。",
   "- Spec／上下限：若內容未提供，表格中填「待補」，並列出需要補齊的欄位。",
   "",
   "輸出格式：結構化 Markdown，至少包含以下章節（可視內容調整小標，但保留意涵）：",
@@ -104,10 +106,21 @@ export async function POST(req: Request) {
     ? `\n\n（以下為截斷後內容，原始約 ${fullText.length.toLocaleString()} 字元，已傳送前 ${MAX_TEXT_CHARS.toLocaleString()} 字元。）`
     : "";
 
-  const userPrompt = [
+  const userPromptParts = [
     `檔名：${file.name}`,
     `推論類型（依副檔名／MIME）：${kind}（log / csv / unknown 之一）`,
     `檔案大小：${file.size.toLocaleString()} bytes`,
+  ];
+  if (kind === "csv") {
+    userPromptParts.push(
+      "",
+      "## 系統預先計算之數值摘要（供撰寫依據，勿虛構）",
+      "",
+      computeCsvNumericSummary(fullText),
+    );
+  }
+  const userPrompt = [
+    ...userPromptParts,
     "",
     "檔案內文：",
     "```text",

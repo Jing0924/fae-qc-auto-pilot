@@ -12,8 +12,9 @@ export default function Home() {
             測試報告與品管分析
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            上傳 Log 或 CSV，由 Gemini 透過 Vercel AI SDK 串流產出繁中 FAE
-            分析報告（需設定 GEMINI_API_KEY）。
+            可一次上傳多份 Log 或 CSV，每份產一則可收合預覽的繁中 FAE
+            分析報告；由 Gemini 透過 Vercel AI SDK 依序串流產生（需設定
+            GEMINI_API_KEY）。
           </p>
           <p className="mt-3 text-xs text-muted-foreground">
             範例檔：
