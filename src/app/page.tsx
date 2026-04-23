@@ -13,17 +13,17 @@ export default function Home() {
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
             可一次上傳多份 Log 或 CSV，每份產一則可收合預覽的繁中 FAE
-            分析報告；併入示範規格與門檻參數後，由 Gemini 依序串流產生（需設定
+            分析報告；併入示範規格後，由 Gemini 依序串流產生（需設定
             GEMINI_API_KEY）。
           </p>
           <p className="mt-3 text-xs text-muted-foreground">
             範例檔：
             <a
               className="ml-1 underline underline-offset-2 hover:text-foreground"
-              href="/samples/fake-qc-lot.csv"
+              href="/samples/fake-qc-lot-2026-04-23-173922.csv"
               download
             >
-              fake-qc-lot.csv
+              fake-qc-lot-2026-04-23-173922.csv
             </a>
             <span className="mx-1.5 text-border">·</span>
             <a

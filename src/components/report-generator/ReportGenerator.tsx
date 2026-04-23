@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Archive,
   ChevronDown,
@@ -34,7 +34,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { CsvChart } from "@/components/csv-chart";
 import { useFaeCsvPrep } from "@/hooks/use-fae-csv-prep";
-import { DEFAULT_THRESHOLDS_JSON } from "@/lib/fae/demo-spec";
 import { buildReportDownloadFilename } from "@/lib/fae/report-filename";
 import {
   buildZipDownloadBasename,
@@ -59,7 +58,8 @@ export type ReportStreamContext = {
   notes: string;
   specMode: SpecMode;
   customSpec: string;
-  thresholdsJson: string;
+  /** 多步 QC 歷史比對（Gemini 工具循環） */
+  qcAgentMode: boolean;
 };
 
 function formatFileSize(bytes: number): string {
@@ -123,17 +123,21 @@ function aggregateBadge(items: ReportItem[]) {
 }
 
 async function streamReportForFile(
-  file: File,
+  file: File | null,
   signal: AbortSignal,
   onDelta: (text: string) => void,
   ctx: ReportStreamContext,
 ): Promise<void> {
   const body = new FormData();
-  body.set("file", file);
+  if (file && file.size > 0) {
+    body.set("file", file);
+  }
   body.set("notes", ctx.notes);
   body.set("specMode", ctx.specMode);
   body.set("customSpec", ctx.customSpec);
-  body.set("thresholdsJson", ctx.thresholdsJson);
+  if (ctx.qcAgentMode) {
+    body.set("agentMode", "qc_compare");
+  }
   const res = await fetch("/api/report", {
     method: "POST",
     body,
@@ -172,7 +176,7 @@ export function ReportGenerator() {
   const [specMode, setSpecMode] = useState<SpecMode>("demo");
   const [customSpec, setCustomSpec] = useState("");
   const [notes, setNotes] = useState("");
-  const [thresholdsJson, setThresholdsJson] = useState(DEFAULT_THRESHOLDS_JSON);
+  const [qcAgentMode, setQcAgentMode] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -194,7 +198,7 @@ export function ReportGenerator() {
     return csvItems.find((c) => c.id === csvTabValue)?.file ?? null;
   }, [csvItems, csvTabValue]);
 
-  const csvPrep = useFaeCsvPrep(activeCsvFile, thresholdsJson);
+  const csvPrep = useFaeCsvPrep(activeCsvFile);
 
   const resetStream = useCallback(() => {
     abortRef.current?.abort();
@@ -233,6 +237,17 @@ export function ReportGenerator() {
   const isBatchBusy = items.some(
     (i) => i.status === "streaming" || i.status === "queued",
   );
+
+  const qcAgentBlockedByFileType = useMemo(
+    () => items.some((i) => !/\.csv$/i.test(i.file.name)),
+    [items],
+  );
+
+  useEffect(() => {
+    if (qcAgentBlockedByFileType && qcAgentMode) {
+      setQcAgentMode(false);
+    }
+  }, [qcAgentBlockedByFileType, qcAgentMode]);
 
   const toggleItem = useCallback((id: string) => {
     setOpenItemId((o) => {
@@ -282,8 +297,8 @@ export function ReportGenerator() {
   }, []);
 
   const generateReports = useCallback(async () => {
-    if (items.length === 0) {
-      setGlobalError("請先加入至少一個檔案。");
+    if (items.length === 0 && !qcAgentMode) {
+      setGlobalError("請先加入至少一個檔案，或勾選「多步歷史比對 Agent」以使用示範 CSV。");
       return;
     }
     if (isBatchBusy) return;
@@ -292,12 +307,11 @@ export function ReportGenerator() {
       return;
     }
 
-    const snapshot = items;
     const ctx: ReportStreamContext = {
       notes: notes.trim(),
       specMode,
       customSpec: customSpec.trim(),
-      thresholdsJson: thresholdsJson.trim() || DEFAULT_THRESHOLDS_JSON,
+      qcAgentMode,
     };
     setGlobalError(null);
     resetStream();
@@ -305,9 +319,29 @@ export function ReportGenerator() {
     abortRef.current = controller;
     const signal = controller.signal;
 
+    let snapshot = items;
+    if (items.length === 0 && qcAgentMode) {
+      const ghostId = crypto.randomUUID();
+      const placeholder = new File(
+        [],
+        "（示範：public/samples 最新 fake-qc-lot）.csv",
+        { type: "text/csv" },
+      );
+      snapshot = [
+        {
+          id: ghostId,
+          file: placeholder,
+          status: "idle" as const,
+          markdown: "",
+        },
+      ];
+      setItems(snapshot);
+      setOpenItemId(ghostId);
+    }
+
     try {
       for (let i = 0; i < snapshot.length; i++) {
-        const { id, file } = snapshot[i];
+        const { id, file } = snapshot[i]!;
         setOpenItemId(id);
         setItems((prev) =>
           prev.map((x) => {
@@ -326,8 +360,11 @@ export function ReportGenerator() {
           }),
         );
 
+        const payload: File | null =
+          qcAgentMode && file.size === 0 ? null : file;
+
         try {
-          await streamReportForFile(file, signal, (text) => {
+          await streamReportForFile(payload, signal, (text) => {
             setItems((prev) =>
               prev.map((x) => (x.id === id ? { ...x, markdown: text } : x)),
             );
@@ -362,7 +399,15 @@ export function ReportGenerator() {
     } finally {
       abortRef.current = null;
     }
-  }, [customSpec, isBatchBusy, items, notes, resetStream, specMode, thresholdsJson]);
+  }, [
+    customSpec,
+    isBatchBusy,
+    items,
+    notes,
+    qcAgentMode,
+    resetStream,
+    specMode,
+  ]);
 
   const cancelBatch = useCallback(() => {
     resetStream();
@@ -500,11 +545,35 @@ export function ReportGenerator() {
                 </div>
               ) : null}
 
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <label className="flex cursor-pointer items-start gap-2 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    className="mt-1 size-4 rounded border-input"
+                    checked={qcAgentMode}
+                    onChange={(e) => setQcAgentMode(e.target.checked)}
+                    disabled={isBatchBusy || qcAgentBlockedByFileType}
+                  />
+                  <span>
+                    <span className="font-medium">多步歷史比對 Agent</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      啟用後由 Gemini 依序呼叫分析／歷史查詢／指標差異工具；可不匯入檔案，改以
+                      public/samples 最新 fake-qc-lot*.csv 為當前批次。
+                    </span>
+                    {qcAgentBlockedByFileType ? (
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        佇列含非 CSV 時無法使用（多步工具僅支援 QC CSV）。
+                      </span>
+                    ) : null}
+                  </span>
+                </label>
+              </div>
+
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   onClick={generateReports}
-                  disabled={items.length === 0 || isBatchBusy}
+                  disabled={(items.length === 0 && !qcAgentMode) || isBatchBusy}
                   className="gap-2"
                 >
                   {isBatchBusy ? (
@@ -538,8 +607,8 @@ export function ReportGenerator() {
             <CardHeader>
               <CardTitle className="text-lg">分析參數與規格</CardTitle>
               <CardDescription>
-                併入生成提示：Demo 規格、門檻 JSON、備註。CSV
-                時左欄顯示與 API 相同之預處理摘要（目前圖表對應檔如下）。
+                併入生成提示：Demo 或自訂規格與備註。CSV
+                時左欄顯示與 API 相同之數值預處理摘要（目前圖表對應檔如下）。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -576,20 +645,6 @@ export function ReportGenerator() {
               ) : null}
 
               <div className="space-y-2">
-                <Label htmlFor="fae-thresholds">門檻（JSON，欄位名須同 CSV）</Label>
-                <Textarea
-                  id="fae-thresholds"
-                  className="min-h-[88px] font-mono text-xs"
-                  value={thresholdsJson}
-                  onChange={(e) => setThresholdsJson(e.target.value)}
-                  disabled={isBatchBusy}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  變更後會一併影響 API 的門檻掃描敘述與下欄即時預覽（CSV）。
-                </p>
-              </div>
-
-              <div className="space-y-2">
                 <Label htmlFor="fae-notes">額外備註（併入提示）</Label>
                 <Textarea
                   id="fae-notes"
@@ -623,14 +678,6 @@ export function ReportGenerator() {
                       {csvPrep.summaryText.slice(0, 4000)}
                       {csvPrep.summaryText.length > 4000 ? "…" : ""}
                     </pre>
-                    {csvPrep.thresholdHints ? (
-                      <div className="mt-2 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
-                        <p className="mb-1 font-medium text-foreground">門檻掃描</p>
-                        <pre className="whitespace-pre-wrap break-words font-mono">
-                          {csvPrep.thresholdHints}
-                        </pre>
-                      </div>
-                    ) : null}
                   </div>
                 ) : null}
                 {csvPrep.error ? (
