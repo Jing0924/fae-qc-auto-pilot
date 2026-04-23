@@ -1,6 +1,6 @@
 # 示範產品規格（Demo / ACME SoC-9001）
 
-- **產品代號**：ACME SoC-9001（本檔與 `fake-qc-lot.csv` 欄位對齊，僅供內部 Demo）
+- **產品代號**：ACME SoC-9001（本檔與 `public/samples` 內示範檔 `fake-qc-lot*.csv` 欄位對齊，僅供內部 Demo）
 - **測試溫度範圍（規格帶內作業點）**：−40°C ~ +85°C（`temp_c`）
 - **核心電壓 VCORE（FT 採樣目標帶域）**：1000 mV ~ 1200 mV（`vcore_mv`；中心值典型 1100 mV，仍須在帶內）
 - **IDDQ 參考（觀察用，實正式規格以封測文件為準）**：依批次與溫度層，報告中應敘明與同批/同溫層的相對變化（`iddq_ua`）

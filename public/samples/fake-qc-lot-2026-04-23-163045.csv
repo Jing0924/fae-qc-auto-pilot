@@ -1,0 +1,10 @@
+lot_id,stage,temp_c,vcore_mv,iddq_ua,leakage_na,fmax_mhz,yield_pct,notes
+LOT-B06,FT,25,1100,141,8.0,3205,98.3,baseline
+LOT-B06,FT,25,1100,142,8.1,3200,98.2,
+LOT-B07,FT,85,1100,196,12.1,2985,96.6,HTOL
+LOT-B07,FT,85,1100,198,12.2,2980,96.4,
+LOT-B08,FT,-40,1100,137,7.6,3240,98.5,cold
+LOT-B08,FT,-40,1100,250,10.2,2200,87.0,outlier: cold + high iddq - map to reticle position
+LOT-B09,FT,25,1100,144,8.2,3188,98.0,
+LOT-B09,FT,25,1100,145,8.3,3185,97.9,
+LOT-B09,FT,25,1100,143,8.1,3190,98.1,
