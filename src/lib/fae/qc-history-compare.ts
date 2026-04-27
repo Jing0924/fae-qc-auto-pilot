@@ -304,6 +304,69 @@ export function pctDiff(oldVal: number, newVal: number): number | "N/A" {
   return ((newVal - oldVal) / oldVal) * 100;
 }
 
+/** 供模型 I/O 與報告一致之三位小數捨入（避免 -0）。 */
+export function round3(n: number): number {
+  const r = Math.round(n * 1000) / 1000;
+  return Object.is(r, -0) ? 0 : r;
+}
+
+export function roundBatchAnalysisSummaryForModel(
+  summary: BatchAnalysisSummary,
+): BatchAnalysisSummary {
+  return {
+    ...summary,
+    fileLevel: {
+      ...summary.fileLevel,
+      iddq_ua:
+        summary.fileLevel.iddq_ua != null
+          ? round3(summary.fileLevel.iddq_ua)
+          : null,
+      fmax_mhz:
+        summary.fileLevel.fmax_mhz != null
+          ? round3(summary.fileLevel.fmax_mhz)
+          : null,
+      yield_pct:
+        summary.fileLevel.yield_pct != null
+          ? round3(summary.fileLevel.yield_pct)
+          : null,
+    },
+    lotAggregates: summary.lotAggregates.map((a) => ({
+      ...a,
+      iddq_ua_avg:
+        a.iddq_ua_avg != null ? round3(a.iddq_ua_avg) : null,
+      fmax_mhz_avg:
+        a.fmax_mhz_avg != null ? round3(a.fmax_mhz_avg) : null,
+      yield_pct_avg:
+        a.yield_pct_avg != null ? round3(a.yield_pct_avg) : null,
+    })),
+    anomalies: summary.anomalies.map((row) => ({
+      ...row,
+      value: round3(row.value),
+      lotAverage: round3(row.lotAverage),
+      relDev: round3(row.relDev),
+    })),
+  };
+}
+
+function roundComparativeMetric(m: ComparativeMetric): ComparativeMetric {
+  return {
+    old: m.old != null ? round3(m.old) : null,
+    new: m.new != null ? round3(m.new) : null,
+    diffPct: typeof m.diffPct === "number" ? round3(m.diffPct) : m.diffPct,
+  };
+}
+
+export function roundComparativeMetricsForModel(
+  data: ComparativeMetricsResult,
+): ComparativeMetricsResult {
+  return {
+    ...data,
+    iddq_ua: roundComparativeMetric(data.iddq_ua),
+    fmax_mhz: roundComparativeMetric(data.fmax_mhz),
+    yield_pct: roundComparativeMetric(data.yield_pct),
+  };
+}
+
 export function computeComparativeMetrics(args: {
   baselineText: string;
   currentText: string;
@@ -342,5 +405,5 @@ export function computeComparativeMetrics(args: {
 }
 
 export function summaryToJsonForModel(summary: BatchAnalysisSummary): string {
-  return JSON.stringify(summary, null, 2);
+  return JSON.stringify(roundBatchAnalysisSummaryForModel(summary), null, 2);
 }

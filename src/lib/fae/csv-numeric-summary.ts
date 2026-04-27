@@ -38,12 +38,18 @@ function medianSorted(sorted: number[]): number {
   return (sorted[n / 2 - 1]! + sorted[n / 2]!) / 2;
 }
 
-function fmtNum(x: number): string {
-  if (Number.isInteger(x) && Math.abs(x) < 1e9) return String(x);
-  if (Math.abs(x) >= 1e4 || (Math.abs(x) < 1e-3 && x !== 0)) {
-    return x.toExponential(4);
+/** 報告用：可讀區間固定三位小數；極大／極小為科學記號（指數前三位小數）。 */
+function fmtReportMetric(x: number): string {
+  if (!Number.isFinite(x)) {
+    if (Number.isNaN(x)) return "NaN";
+    return x > 0 ? "Infinity" : "-Infinity";
   }
-  return x.toFixed(6).replace(/\.?0+$/, "") || "0";
+  const abs = Math.abs(x);
+  const v = abs === 0 ? 0 : x;
+  if (abs >= 1e4 || (abs < 1e-3 && v !== 0)) {
+    return v.toExponential(3);
+  }
+  return v.toFixed(3);
 }
 
 /**
@@ -81,7 +87,7 @@ export function computeCsvNumericSummary(csvText: string): string {
     const { mean, stdev } = welford(values);
     const med = medianSorted(sorted);
     lines.push(
-      `| ${field} | ${values.length} | ${fmtNum(sorted[0]!)} | ${fmtNum(sorted[sorted.length - 1]!)} | ${fmtNum(mean)} | ${fmtNum(stdev)} | ${fmtNum(med)} |`,
+      `| ${field} | ${values.length} | ${fmtReportMetric(sorted[0]!)} | ${fmtReportMetric(sorted[sorted.length - 1]!)} | ${fmtReportMetric(mean)} | ${fmtReportMetric(stdev)} | ${fmtReportMetric(med)} |`,
     );
   }
 
@@ -137,13 +143,13 @@ export function computeCsvNumericSummary(csvText: string): string {
 
     if (toShow.length === 0) {
       lines.push(
-        `- **${field}**（Q1=${fmtNum(q1)}, Q3=${fmtNum(q3)}, IQR=${fmtNum(iqr)}）：柵內，無樣本列點。`,
+        `- **${field}**（Q1=${fmtReportMetric(q1)}, Q3=${fmtReportMetric(q3)}, IQR=${fmtReportMetric(iqr)}）：柵內，無樣本列點。`,
       );
     } else {
-      const parts = toShow.map((o) => `列 ${o.row1} = ${fmtNum(o.value)}`);
+      const parts = toShow.map((o) => `列 ${o.row1} = ${fmtReportMetric(o.value)}`);
       const hadMore = colOut.length > toShow.length;
       lines.push(
-        `- **${field}**（柵下界 ${fmtNum(low)}、上界 ${fmtNum(high)}）：${parts.join("；")}${
+        `- **${field}**（柵下界 ${fmtReportMetric(low)}、上界 ${fmtReportMetric(high)}）：${parts.join("；")}${
           hadMore ? "（同欄另有離群，已因每欄上限略）" : ""
         }`,
       );

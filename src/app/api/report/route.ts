@@ -11,6 +11,8 @@ import {
   listQcSampleFiles,
   pickHistoryBasenameWithRoot,
   readSampleCsvIfAllowed,
+  roundBatchAnalysisSummaryForModel,
+  roundComparativeMetricsForModel,
   summaryToJsonForModel,
   whitelistFromMetas,
 } from "@/lib/fae/qc-history-compare";
@@ -50,6 +52,7 @@ const FAE_SYSTEM_PROMPT = [
   "- 區分「觀察到的現象」與「假設／可能根因」；假設需列出，並建議可驗證的下一步（量測、交叉比對、實驗設計）。",
   "- 若偵測到可能 outlier 或異常趨勢，說明依據（欄位、數值、與周遭資料對比），並標註信心程度。",
   "- 當使用者的提示內含「## 系統預先計算之數值摘要」等系統產生之統計時，報告中引用的 n、各欄 min／max、平均、標準差、中位數、IQR 離群之列號與數值，必須與該摘要完全一致，不得虛構或竄改；若摘要以括號註明「無法產生數值統計」或等效說明，則僅能依內文摘錄推論，並可簡要說明缺統計之原因。",
+  "- 報告內所有量測與統計指標（含表格與內文），以小數點後第三位呈現，與系統「數值摘要」一致；若直接引述 log 內文而原始位數不同，可簡要說明後仍以摘要之位數寫法呈現。",
   "- Spec／USL-LSL：須**引用**規格段落或表格內的具體數值作符合性敘述；若提示未提供，表格中填「待補」，並列出需要補齊的欄位。",
   "",
   "輸出格式：結構化 Markdown，至少包含以下章節（可視內容調整小標，但保留意涵）：",
@@ -69,7 +72,7 @@ const QC_AGENT_SYSTEM_PROMPT = [
   "Step 1：呼叫工具 analyzeCurrentBatch，掌握當前檔之 lot 聚合、異常列、stage 分布與檔級平均。",
   "Step 2：根據 Step 1 的結論，呼叫 lookupHistory（currentFileName 必須與 Step 1 之 fileName 一致）；必要時傳 stageFilter（如 FT、CP）。",
   "Step 3：若 lookupHistory 回傳 found: true，**必須**再呼叫 calculateComparativeMetrics（baselineFileName＝歷史檔、currentFileName＝當前檔），取得 IDDQ／Fmax／Yield 之全檔平均與 diffPct。若 found: false，於報告中說明無歷史對照，仍完成當批分析。",
-  "Step 4：輸出完整 Markdown 報告（含比對表）；表格與敘述中的 old／new／diffPct **必須與工具輸出完全一致**，不得竄改或四捨五入成不同數字。",
+  "Step 4：輸出完整 Markdown 報告（含比對表）；表格與敘述中的 old／new／diffPct 及 analyzeCurrentBatch／lookupHistory 之數值**必須與工具回傳一致**。工具內之數值已統一為小數點後三位（捨入後），報告應與之相同，不得改寫成不同數字。",
   "",
   `【篇幅】全文（含標題與表格）總字元數不得超過 ${DEMO_QC_AGENT_MAX_REPORT_CHARS}；請預留結尾並優先保留結論與比對表。`,
   "",
@@ -254,7 +257,7 @@ export async function POST(req: Request) {
     const tools = {
       analyzeCurrentBatch: tool({
         description:
-          "解析當前批次 QC CSV（上傳檔或 samples 最新檔），回傳 lot 聚合、異常列、stage 計數與檔級平均（JSON）。",
+          "解析當前批次 QC CSV（上傳檔或 samples 最新檔），回傳 lot 聚合、異常列、stage 計數與檔級平均（JSON）；數值欄已捨入至小數點後三位。",
         inputSchema: zodSchema(z.object({})),
         execute: async () => {
           const r = analyzeQcBatchCsv(
@@ -301,13 +304,13 @@ export async function POST(req: Request) {
           return JSON.stringify({
             found: true,
             historyFileName: p.basename,
-            summary: an.summary,
+            summary: roundBatchAnalysisSummaryForModel(an.summary),
           });
         },
       }),
       calculateComparativeMetrics: tool({
         description:
-          "比對兩份 CSV 之全檔平均 IDDQ、Fmax、Yield，計算 diffPct（舊為 baseline）。數值須原樣寫入報告。",
+          "比對兩份 CSV 之全檔平均 IDDQ、Fmax、Yield，計算 diffPct（舊為 baseline）。輸出數值已捨入至小數點後三位，須原樣寫入報告。",
         inputSchema: zodSchema(
           z.object({
             baselineFileName: z.string(),
@@ -342,7 +345,7 @@ export async function POST(req: Request) {
             currentFileName,
           });
           if (!cmp.ok) return JSON.stringify({ error: cmp.error });
-          return JSON.stringify(cmp.data);
+          return JSON.stringify(roundComparativeMetricsForModel(cmp.data));
         },
       }),
     };
